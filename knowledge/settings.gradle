@@ -1,0 +1,5 @@
+include 'online'
+include 'common'
+
+rootProject.name = 'knowledge'
+rootProject.children.each { it.name = rootProject.name + '_' + it.name }

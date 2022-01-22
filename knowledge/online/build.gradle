@@ -1,0 +1,237 @@
+apply 'java'
+apply 'eclipse'
+
+sourceSets {
+	main {
+		java {
+			srcDir 'src/java'
+		}
+		resources {
+			srcDir 'src/resources'
+		}
+	}
+}
+
+import org.gradle.plugins.ide.eclipse.model.SourceFolder
+
+// eclipseプロジェクト設定
+eclipse {
+	// .projectの設定
+	project {
+		buildCommands.clear();
+		buildCommand 'org.eclipse.wst.common.project.facet.core.builder'
+		buildCommand 'org.eclipse.jdt.core.javabuilder'
+		buildCommand 'org.hibernate.eclipse.console.hibernateBuilder'
+		buildCommand 'org.jboss.tools.jst.web.kb.kbbuilder'
+		buildCommand 'org.jboss.tools.cdi.core.cdibuilder'
+		buildCommand 'org.eclipse.wst.validation.validationbuilder'
+		buildCommand 'org.eclipse.buildship.core.gradleprojectbuilder'
+	}
+	// .classpathの設定
+	classpath {
+		// 依存しているjarのsourceとjavadocをダウンロードする
+		downloadSources = true	// default=false
+		downloadJavadoc = true	// javadocのパスは絶対パス
+		
+		// javaのビルドパスにサーバー・ランタイムを追加
+		containers 'org.eclipse.jst.server.core.container/org.jbosside.eclipse.as.core.server.runtime.runtimeTarget/Jboss EAP 7.3 Runtime'
+		
+		file {
+			// ソースパスの設定を削除
+			beforeMerged { classpath ->
+				classpath.entries.removeAll { it.kind == "src" }
+			}
+			// 出力パスを gradle のデフォルトに合わせる
+			whenMerged { classpath ->
+				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/main/java")      } *.output ="bin/classes"
+				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/main/resources") } *.output ="bin/classes"
+				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/test/java")      } *.output ="bin/test-classes"
+				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/test/resources") } *.output ="bin/test-classes"
+				classpath.entries.removeAll { it.kind == "output" } 
+			}
+		}
+	}
+	wtp {
+		// [プロジェクト]->[プロパティ]->[デプロイメントアセンブリー]の設定
+		// .settings/org.eclipse.wst.common.component
+		component {
+			file {
+				withXml { xml ->
+					// XMLの子要素を全て削除
+					xml.asNode().children().removeAll( xml.asNode().children().findAll { true} )
+					
+					// commonのJARを作成
+					def common = project(':knowledge_common')
+					def commonJar = common.tasks['jar']
+					
+					def module = xml.asNode().appendNode('wb-module', ['deploy-name': 'knowledge_online'])
+					module.appendNode('wb-resource', ['deploy-path': '/', 'source-path': 'src/main/webapps', 'tag': 'defaultRootSource'])
+					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': 'src/main/java'])
+					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': 'src/main/resources'])
+					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': 'src/test/java'])
+					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': 'src/test/resources'])
+					
+					def depMod = module.appendNode(
+						'dependent-module',
+						[ 'archiveName': 'knowledge_common.jar'
+						 ,'deploy-path': '/WEB-INF/lib'
+						 ,'handle': 'module:resource/knowledge_common/knowledge_common'
+						]
+					)
+					depMod.appendNode('dependency-type', 'uses')
+					
+					module.appendNode('property', ['name': 'java-output-path', 'value': '/knowledge_online/bin/classes'])
+					module.appendNode('property', ['name': 'context-root', 'value': 'knowledge_online'])
+				}
+			}
+		}
+		// [プロジェクト]->[プロジェクトファセット]の設定
+		// .settings/org.eclipse.wst.common.project.facet.core.xml
+		facet {
+			withXml { provider ->
+				// XMLの子要素を全て削除
+				provider.asNode().children().removeAll( provider.asNode().children().findAll { true } )
+				
+				NodeBuilder builder = new NodeBuilder()
+				// ランタイム設定
+				provider.asNode().children().add( 0, new NodeBuilder().runtime(name: 'JBoss EAP 7.3 Runtime') )
+				// fixed facet jsdt
+				provider.asNode().children().add( 1, new NodeBuilder().fixed(facet: 'wst.jsdt.web') )
+				// Java
+				provider.asNode().children().add( 2, new NodeBuilder().installed(facet: 'java', version: '1.8') )
+				// 動的モジュール
+				provider.asNode().children().add( 3, new NodeBuilder().installed(facet: 'jst.web', version: '4.0') )
+				// JavaScript
+				provider.asNode().children().add( 4, new NodeBuilder().installed(facet: 'wst.jsdt.web', version: '1.0') )
+				// CDI
+				provider.asNode().children().add( 5, new NodeBuilder().installed(facet: 'jst.cdi', version: '2.0') )
+				// JSF
+				provider.asNode().children().add( 6, new NodeBuilder().installed(facet: 'jst.jsf', version: '2.3') )
+				// JPA
+				provider.asNode().children().add( 7, new NodeBuilder().installed(facet: 'jpt.jpa', version: '2.2') )
+			}
+		}
+	}
+}
+
+// ビルドスクリプト
+/*
+buldscript {
+	repositories {
+		mavenCentral()
+		maven { url 'https://plugins.gradle.org/m2/' }
+	}
+	dependencies {
+		classpath 'com.github.spotbugs:com.github.spotbugs.gradle.plugin:4.1.0'
+		classpath 'org.owasp:dependency-check-gradle:5.3.2.1'
+	}
+}
+*/
+ext {
+	jdkVersion = '1.8'
+	springVersion = '5.3.7'
+	springSecurityVersion = '5.4.6'
+	
+	libDir = '${projectDir}/lib'
+	confDir = '${projectDir}/config'
+	
+	// JavaDoc用エンコード
+	defaultEncoding = 'UTF-8'
+	defaultLocale = 'ja_JP'
+}
+
+jar {
+	baseName = 'knowledge_common'
+	version = '1.0'
+}
+
+dependencies {
+	/*
+	// ローカルライブラリ
+	implementation files (
+		 'lib/xxxx1.jar'
+		,'lib/xxxx2.jar'
+	)
+	*/
+	
+	/*
+	// ******************************
+	// Springframework
+	// ******************************
+	// https://mvnrepository.com/artifact/org.springframework/spring-context-support
+	implementation group: 'org.springframework', name: 'spring-context-support', version: '$springVersion'
+	// https://mvnrepository.com/artifact/org.springframework/spring-expression
+	implementation group: 'org.springframework', name: 'spring-expression', version: '$springVersion'
+	// https://mvnrepository.com/artifact/org.springframework/spring-aop
+	implementation group: 'org.springframework', name: 'spring-aop', version: '$springVersion'
+	// https://mvnrepository.com/artifact/org.springframework/spring-aspects
+	implementation group: 'org.springframework', name: 'spring-aspects', version: '$springVersion'
+	// https://mvnrepository.com/artifact/org.springframework/spring-orm
+	implementation group: 'org.springframework', name: 'spring-orm', version: '$springVersion'
+	// https://mvnrepository.com/artifact/org.springframework/spring-webmvc
+	implementation group: 'org.springframework', name: 'spring-webmvc', version: '$springVersion'
+	// https://mvnrepository.com/artifact/org.springframework.data/spring-data-commons
+	implementation group: 'org.springframework.data', name: 'spring-data-commons', version: '2.4.5'
+	// https://mvnrepository.com/artifact/org.springframework.data/spring-data-jpa
+	implementation group: 'org.springframework.data', name: 'spring-data-jpa', version: '2.4.5'
+	
+	// ******************************
+	// Spring Security
+	// ******************************
+	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-core
+	implementation group: 'org.springframework.security', name: 'spring-security-core', version: '$springSecurityVersion'
+	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-web
+	implementation group: 'org.springframework.security', name: 'spring-security-web', version: '$springSecurityVersion'
+	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-acl
+	implementation group: 'org.springframework.security', name: 'spring-security-acl', version: '$springSecurityVersion'
+	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-web
+	implementation group: 'org.springframework.security', name: 'spring-security-web', version: '$springSecurityVersion'
+	
+	// ******************************
+	// DataBase
+	// ******************************
+	// https://mvnrepository.com/artifact/com.zaxxer/HikariCP
+	implementation group: 'com.zaxxer', name: 'HikariCP', version: '3.4.5'
+	// https://mvnrepository.com/artifact/org.hibernate/hibernate-core
+	implementation group: 'org.hibernate', name: 'hibernate-core', version: '5.4.21.Final'
+	// https://mvnrepository.com/artifact/org.hibernate/hibernate-entitymanager
+	implementation group: 'org.hibernate', name: 'hibernate-entitymanager', version: '5.4.21.Final'
+	// https://mvnrepository.com/artifact/org.hibernate/hibernate-validator
+	implementation group: 'org.hibernate', name: 'hibernate-validator', version: '6.2.0.Final'
+	
+	// ******************************
+	// Thymeleaf
+	// ******************************
+	// https://mvnrepository.com/artifact/org.thymeleaf/thymeleaf
+	implementation group: 'org.thymeleaf', name: 'thymeleaf', version: '3.0.12.RELEASE'
+	// https://mvnrepository.com/artifact/org.thymeleaf/thymeleaf-spring5
+	implementation group: 'org.thymeleaf', name: 'thymeleaf-spring5', version: '3.0.12.RELEASE'
+	// https://mvnrepository.com/artifact/org.thymeleaf.extras/thymeleaf-extras-springsecurity5
+	implementation group: 'org.thymeleaf.extras', name: 'thymeleaf-extras-springsecurity5', version: '3.0.4.RELEASE'
+	
+	// ******************************
+	// Servlet
+	// ******************************
+	// https://mvnrepository.com/artifact/javax.servlet/javax.servlet-api
+	implementation group: 'javax.servlet', name: 'javax.servlet-api', version: '4.0.1'
+	// https://mvnrepository.com/artifact/javax.faces/javax.faces-api
+	implementation group: 'javax.faces', name: 'javax.faces-api', version: '2.3'
+	// https://mvnrepository.com/artifact/jboss/jboss-ejb3x
+	implementation group: 'jboss', name: 'jboss-ejb3x', version: '4.2.2.GA'
+	// https://mvnrepository.com/artifact/javax.enterprise/cdi-api
+	implementation group: 'javax.enterprise', name: 'cdi-api', version: '2.0'
+
+	// ******************************
+	// Others
+	// ******************************
+	// https://mvnrepository.com/artifact/org.projectlombok/lombok
+	providedCompile group: 'org.projectlombok', name: 'lombok', version: '1.18.20'
+	// https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
+	implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.11'
+	// https://mvnrepository.com/artifact/commons-beanutils/commons-beanutils
+	implementation group: 'commons-beanutils', name: 'commons-beanutils', version: '1.9.4'
+	
+	*/
+	implementation project(':knowledge_common')
+	
+}
