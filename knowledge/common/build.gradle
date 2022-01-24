@@ -1,5 +1,15 @@
-apply 'java'
-apply 'eclipse'
+// TODO プラグイン 案件で必要に応じて追加削除
+apply plugin: 'java'
+apply plugin: 'java-library'
+apply plugin: 'eclipse'
+apply plugin: 'eclipse-wtp'
+apply plugin: 'idea'
+apply plugin: 'maven-publish'
+apply plugin: 'checkstyle'
+apply plugin: 'com.github.spotbugs'
+apply plugin: 'pmd'
+apply plugin: 'war'
+apply plugin: 'org.owasp.dependencycheck'
 
 sourceSets {
 	main {
@@ -10,191 +20,296 @@ sourceSets {
 			srcDir 'src/resources'
 		}
 	}
+	hot {
+		java {
+			srcDir 'src/java'
+		}
+	}
 }
 
+// eclipse プロジェクトの設定
 import org.gradle.plugins.ide.eclipse.model.SourceFolder
-
-// eclipse�v���W�F�N�g�ݒ�
 eclipse {
-	// .project�̐ݒ�
+	// .project の設定
 	project {
 		buildCommands.clear();
-		buildCommand 'org.eclipse.wst.common.project.facet.core.builder'
 		buildCommand 'org.eclipse.jdt.core.javabuilder'
-		buildCommand 'org.hibernate.eclipse.console.hibernateBuilder'
+		buildCommand 'org.eclipse.wst.common.project.facet.core.builder'
 		buildCommand 'org.jboss.tools.jst.web.kb.kbbuilder'
+		buildCommand 'org.eclipse.buildship.core.gradleprojectbuilder'
 		buildCommand 'org.jboss.tools.cdi.core.cdibuilder'
 		buildCommand 'org.eclipse.wst.validation.validationbuilder'
-		buildCommand 'org.eclipse.buildship.core.gradleprojectbuilder'
+		buildCommand 'org.hibernate.eclipse.console.hibernateBuilder'
 	}
-	// .classpath�̐ݒ�
+	// .classpath の設定
 	classpath {
-		// �ˑ����Ă���jar��source��javadoc���_�E�����[�h����
-		downloadSources = true	// default=false
-		downloadJavadoc = true	// javadoc�̃p�X�͐�΃p�X
+		// 依存している jar の source と javadoc をダウンロードする
+		downloadSources = true    // デフォルトは false
+		downloadJavadoc = true    // javadoc のパスは絶対パスになる
 		
-		// java�̃r���h�p�X�ɃT�[�o�[�E�����^�C����ǉ�
-		containers 'org.eclipse.jst.server.core.container/org.jbosside.eclipse.as.core.server.runtime.runtimeTarget/Jboss EAP 7.3 Runtime'
+		// Java のビルドパスにサーバー・ランタイムを追加
+		containers 'org.eclipse.jst.server.core.container/org.jboss.ide.eclipse.as.core.server.runtime.runtimeTarget/JBoss EAP 7.3 Runtime'
 		
 		file {
-			// �\�[�X�p�X�̐ݒ���폜
+			// ソースパスの設定を削除
 			beforeMerged { classpath ->
 				classpath.entries.removeAll { it.kind == "src" }
 			}
-			// �o�̓p�X�� gradle �̃f�t�H���g�ɍ��킹��
+			// 出力パスを gradle のデフォルトに合わせる
 			whenMerged { classpath ->
-				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/main/java")      } *.output ="bin/classes"
-				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/main/resources") } *.output ="bin/classes"
-				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/test/java")      } *.output ="bin/test-classes"
-				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/test/resources") } *.output ="bin/test-classes"
-				classpath.entries.removeAll { it.kind == "output" } 
+				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/main/java")      }*.output = "target/classes"
+				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/main/resources") }*.output = "target/classes"
+				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/hot/java")       }*.output = "target/classes"
+				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/test/java")      }*.output = "target/test-classes"
+				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/test/resources") }*.output = "target/test-classes"
+				classpath.entries.removeAll { it.kind == "output" }                
 			}
 		}
+		// Web App ライブラリー のJARにソースがアタッチされない問題の対応(classpathの一番最後に追加する)
+		/*
+		withXml { xml ->
+			def node = xml.asNode()
+			node.remove( node.find { it.@path == 'org.eclipse.jst.j2ee.internal.web.container' } )
+			node.appendNode( 'classpathentry', [ kind: 'con', path: 'org.eclipse.jst.j2ee.internal.web.container', exported: 'true'])
+		}
+		*/
 	}
 	wtp {
-		// [�v���W�F�N�g]->[�v���p�e�B]->[�f�v���C�����g�A�Z���u���[]�̐ݒ�
+		// [プロジェクト]→[プロパティ]->[デプロイメント・アセンブリー]の設定
 		// .settings/org.eclipse.wst.common.component
 		component {
 			file {
 				withXml { xml ->
-					// XML�̎q�v�f��S�č폜
-					xml.asNode().children().removeAll( xml.asNode().children().findAll { true} )
+					// XMLの子要素を全て削除
+					xml.asNode().children().removeAll( xml.asNode().children().findAll { true } )
 					
-					def module = xml.asNode().appendNode('wb-module', ['deploy-name': 'knowledge_common'])
-					module.appendNode('wb-resource', ['deploy-path': '/', 'source-path': 'src/main/java'])
-					module.appendNode('wb-resource', ['deploy-path': '/', 'source-path': 'src/main/resources'])
-					module.appendNode('wb-resource', ['deploy-path': '/', 'source-path': 'src/test/java'])
-					module.appendNode('wb-resource', ['deploy-path': '/', 'source-path': 'src/test/resources'])
+					// rms_commonのJARを作成
+					def common = project(':rms_common')
+					def commonJar = common.tasks['jar']
+					
+					def module = xml.asNode().appendNode('wb-module', ['deploy-name': 'rms_online'])
+					module.appendNode('wb-resource', ['deploy-path': '/', 'source-path': '/src/main/webapp', 'tag': 'defaultRootSource'])
+					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': '/src/main/java'])
+					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': '/src/main/resources'])
+					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': '/src/test/java'])
+					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': '/src/test/resources'])
+					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': '/src/hot/java'])
+					
+					//def depMod = module.appendNode('dependent-module', ['archiveName': 'rms_gi-entity.jar', 'deploy-path': '/WEB-INF/lib', 'handle': 'module:/classpath/lib/rms/rms_jars/common/rms_gi-entity.jar'])
+					//depMod.appendNode('dependency-type', 'uses')
+					//depMod = module.appendNode('dependent-module', ['archiveName': commonJar.archiveName, 'deploy-path': '/WEB-INF/lib', 'handle': 'module:/resource/rms_common/rms_common'])
+					def depMod = module.appendNode('dependent-module', ['archiveName': 'rms_common.jar', 'deploy-path': '/WEB-INF/lib', 'handle': 'module:/resource/rms_common/rms_common'])
+					depMod.appendNode('dependency-type', 'uses')
+					
+					module.appendNode('property', ['name': 'java-output-path', 'value': '/rms_online/target/classes'])
+					module.appendNode('property', ['name': 'context-root', 'value': 'rms_online'])
 				}
 			}
 		}
-		// [�v���W�F�N�g]->[�v���W�F�N�g�t�@�Z�b�g]�̐ݒ�
+		
+		// プロジェクトのプロパティ->[プロジェクト・ファセット]を設定する
 		// .settings/org.eclipse.wst.common.project.facet.core.xml
 		facet {
-			withXml { provider ->
-				// XML�̎q�v�f��S�č폜
-				provider.asNode().children().removeAll( provider.asNode().children().findAll { true } )
-				
-				NodeBuilder builder = new NodeBuilder()
-				// �����^�C���ݒ�
-				provider.asNode().children().add( 0, new NodeBuilder().runtime(name: 'JBoss EAP 7.3 Runtime') )
-				// fixed facet Java
-				provider.asNode().children().add( 1, new NodeBuilder().fixed(facet: 'Java') )
-				// fixed facet jst.utility
-				provider.asNode().children().add( 2, new NodeBuilder().fixed(facet: 'jst.utility') )
-				// Java
-				provider.asNode().children().add( 3, new NodeBuilder().installed(facet: 'java', version: '1.8') )
-				// jst.utility
-				provider.asNode().children().add( 4, new NodeBuilder().installed(facet: 'jst.utility', version: '1.0') )
+			/*
+			// fixed facet jsdt
+			facet type: org.gradle.plugins.ide.eclipse.model.Facet.FacetType.fixed, name: 'wst.jsdt.web'
+			// CDI
+			facet name: 'jst.cdi', version: '2.0'
+			// java
+			facet name: 'jst.java', version: '1.8'
+			// JavaScript
+			facet name: 'wst.jsdt.web', version: '1.0'
+			// JSF
+			facet name: 'jst.jsf', version: '2.3'
+			// JPA
+			facet name: 'jpt.jpa', version: '2.2'
+			// 動的モジュール
+			facet name: 'jst.web', version: '4.0'
+			*/
+			file {
+				withXml { provider ->
+					// XMLの子要素を全て削除
+					provider.asNode().children().removeAll( provider.asNode().children().findAll { true } )
+					
+					NodeBuilder builder = new NodeBuilder()
+					// ランタイム設定
+					provider.asNode().children().add(0, new NodeBuilder().runtime(name: "JBoss EAP 7.3 Runtime"))
+					// fixed facet jsdt
+					provider.asNode().children().add(1, new NodeBuilder().fixed(facet: "wst.jsdt.web"))
+					// java
+					provider.asNode().children().add(2, new NodeBuilder().installed(facet: "java", version: "1.8"))
+					// 動的モジュール
+					provider.asNode().children().add(3, new NodeBuilder().installed(facet: "jst.web", version: "4.0"))
+					// JavaScript
+					provider.asNode().children().add(4, new NodeBuilder().installed(facet: "wst.jsdt.web", version: "1.0"))
+					// CDI
+					provider.asNode().children().add(5, new NodeBuilder().installed(facet: "jst.cdi", version: "2.0"))
+					// JSF
+					provider.asNode().children().add(6, new NodeBuilder().installed(facet: "jst.jsf", version: "2.3"))
+					// JPA
+					provider.asNode().children().add(7, new NodeBuilder().installed(facet: "jpt.jpa", version: "2.2"))
+				}
 			}
 		}
 	}
 }
 
-// �r���h�X�N���v�g
-/*
-buldscript {
+
+buildscript {
 	repositories {
 		mavenCentral()
+		//maven {	url 'http://repository.scskinfo.jp/nexus/repository/maven-central/' }
 		maven { url 'https://plugins.gradle.org/m2/' }
 	}
 	dependencies {
 		classpath 'com.github.spotbugs:com.github.spotbugs.gradle.plugin:4.1.0'
 		classpath 'org.owasp:dependency-check-gradle:5.3.2.1'
+
 	}
 }
-*/
 
 ext {
+	// バージョン等
 	jdkVersion = '1.8'
-	springVersion = '5.3.7'
-	springSecurityVersion = '5.4.6'
-	
-	libDir = '${projectDir}/lib'
-	confDir = '${projectDir}/config'
-	
-	// JavaDoc�p�G���R�[�h
+	javaeeVersion = '3.0'
+	springVersion = "5.3.7"
+	springSecurityVersion = "5.4.6"
+	fcVersion = '3.1.1'
+
+	// 各種ディレクトリ
+	libDir = "${projectDir}/lib"
+	confDir = "${projectDir}/config"
+
+	// JavaDoc用エンコード
 	defaultEncoding = 'UTF-8'
 	defaultLocale = 'ja_JP'
+
 }
 
-jar {
-	baseName = 'knowledge_common'
-	version = '1.0'
+
+repositories {
+	mavenCentral()
+	mavenLocal()
+	//maven {	url 'http://repository.scskinfo.jp/nexus/repository/maven-central/' }
+	//maven {	url 'http://repository.scskinfo.jp/nexus/repository/maven-public/' }
+}
+
+subprojects {
+    repositories {
+        mavenCentral()
+    }
+}
+
+//依存関係
+configurations {
+	implementation {
+		exclude module: 'commons-logging' // SLF4Jで代替するため不要
+		exclude module: 'log4j'// SLF4Jで代替するため不要
+		exclude module: 'slf4j-ext' // 脆弱性があるので入らないようにする(CVE-2018-8088)
+	}
 }
 
 dependencies {
-	/*
-	// ���[�J�����C�u����
-	implementation files (
-		 'lib/xxxx1.jar'
-		,'lib/xxxx2.jar'
-	)
-	*/
 	
-	/*
-	// ******************************
-	// Springframework
-	// ******************************
-	// https://mvnrepository.com/artifact/org.springframework/spring-context-support
-	implementation group: 'org.springframework', name: 'spring-context-support', version: '$springVersion'
-	// https://mvnrepository.com/artifact/org.springframework/spring-expression
-	implementation group: 'org.springframework', name: 'spring-expression', version: '$springVersion'
-	// https://mvnrepository.com/artifact/org.springframework/spring-aop
-	implementation group: 'org.springframework', name: 'spring-aop', version: '$springVersion'
-	// https://mvnrepository.com/artifact/org.springframework/spring-aspects
-	implementation group: 'org.springframework', name: 'spring-aspects', version: '$springVersion'
-	// https://mvnrepository.com/artifact/org.springframework/spring-orm
-	implementation group: 'org.springframework', name: 'spring-orm', version: '$springVersion'
-	// https://mvnrepository.com/artifact/org.springframework/spring-webmvc
-	implementation group: 'org.springframework', name: 'spring-webmvc', version: '$springVersion'
-	// https://mvnrepository.com/artifact/org.springframework.data/spring-data-commons
-	implementation group: 'org.springframework.data', name: 'spring-data-commons', version: '2.4.5'
-	// https://mvnrepository.com/artifact/org.springframework.data/spring-data-jpa
-	implementation group: 'org.springframework.data', name: 'spring-data-jpa', version: '2.4.5'
+	// ↓RMS依存関係 --------------------------------------------------------------------------------
+	// https://mvnrepository.com/artifact/javax/javaee-web-api
+	//implementation group: 'javax', name: 'javaee-web-api', version: '8.0.1'
 	
-	// ******************************
-	// Spring Security
-	// ******************************
-	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-core
-	implementation group: 'org.springframework.security', name: 'spring-security-core', version: '$springSecurityVersion'
-	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-web
-	implementation group: 'org.springframework.security', name: 'spring-security-web', version: '$springSecurityVersion'
-	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-acl
-	implementation group: 'org.springframework.security', name: 'spring-security-acl', version: '$springSecurityVersion'
-	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-web
-	implementation group: 'org.springframework.security', name: 'spring-security-web', version: '$springSecurityVersion'
+	// https://mvnrepository.com/artifact/javax.servlet/javax.servlet-api
+	implementation group: 'javax.servlet', name: 'javax.servlet-api', version: '4.0.1'
 	
-	// ******************************
-	// DataBase
-	// ******************************
-	// https://mvnrepository.com/artifact/com.zaxxer/HikariCP
-	implementation group: 'com.zaxxer', name: 'HikariCP', version: '3.4.5'
+	// https://mvnrepository.com/artifact/javax.faces/javax.faces-api
+	implementation group: 'javax.faces', name: 'javax.faces-api', version: '2.3'
+	// https://mvnrepository.com/artifact/jboss/jboss-ejb3x
+	implementation group: 'jboss', name: 'jboss-ejb3x', version: '4.2.2.GA'
+	
+	// https://mvnrepository.com/artifact/javax.enterprise/cdi-api
+	implementation group: 'javax.enterprise', name: 'cdi-api', version: '2.0'
+	
 	// https://mvnrepository.com/artifact/org.hibernate/hibernate-core
 	implementation group: 'org.hibernate', name: 'hibernate-core', version: '5.4.21.Final'
 	// https://mvnrepository.com/artifact/org.hibernate/hibernate-entitymanager
 	implementation group: 'org.hibernate', name: 'hibernate-entitymanager', version: '5.4.21.Final'
-	// https://mvnrepository.com/artifact/org.hibernate/hibernate-validator
-	implementation group: 'org.hibernate', name: 'hibernate-validator', version: '6.2.0.Final'
+	// https://mvnrepository.com/artifact/org.hibernate/hibernate-validator-legacy
+	implementation group: 'org.hibernate', name: 'hibernate-validator-legacy', version: '4.0.2.GA'
 	
-	// ******************************
-	// Thymeleaf
-	// ******************************
-	// https://mvnrepository.com/artifact/org.thymeleaf/thymeleaf
-	implementation group: 'org.thymeleaf', name: 'thymeleaf', version: '3.0.12.RELEASE'
-	// https://mvnrepository.com/artifact/org.thymeleaf/thymeleaf-spring5
-	implementation group: 'org.thymeleaf', name: 'thymeleaf-spring5', version: '3.0.12.RELEASE'
-	// https://mvnrepository.com/artifact/org.thymeleaf.extras/thymeleaf-extras-springsecurity5
-	implementation group: 'org.thymeleaf.extras', name: 'thymeleaf-extras-springsecurity5', version: '3.0.4.RELEASE'
+	// https://mvnrepository.com/artifact/org.seasar.doma/doma
+	implementation group: 'org.seasar.doma', name: 'doma', version: '1.38.2'
 	
-	// ******************************
-	// Others
-	// ******************************
-	// https://mvnrepository.com/artifact/org.projectlombok/lombok
-	compileOnly group: 'org.projectlombok', name: 'lombok', version: '1.18.20'
 	// https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
 	implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.11'
 	// https://mvnrepository.com/artifact/commons-beanutils/commons-beanutils
 	implementation group: 'commons-beanutils', name: 'commons-beanutils', version: '1.9.4'
-	*/	
+	
+	// https://mvnrepository.com/artifact/org.primefaces/primefaces
+	implementation group: 'org.primefaces', name: 'primefaces', version: '8.0'
+	
+	// https://mvnrepository.com/artifact/org.reactivestreams/reactive-streams
+	implementation group: 'org.reactivestreams', name: 'reactive-streams', version: '1.0.3'
+	
+	implementation project(':rms_common')
+	
+	// ↑ここまで追加 --------------------------------------------------------------------------------
+	
+}
+
+
+// FF-COREデフォルトの静的解析
+// 品質チェックエラー発生時もビルドを継続する
+def ignoreCheckFailures = true
+
+// checkstyle
+checkstyle {
+	toolVersion = '8.41.1'
+	ignoreFailures = ignoreCheckFailures
+	checkstyleTest.enabled = false
+	configFile = new File("${confDir}/checkstyle/checkstyle_fcv3.xml")
+	configProperties = [ "config_loc" : "${confDir}/checkstyle" ]
+}
+
+// findbugs(spotbugs)
+spotbugs {
+	toolVersion = '4.2.2'
+	ignoreFailures = ignoreCheckFailures
+	excludeFilter = file("${confDir}/spotbugs/exclusion_filter_fcv3.xml")
+	showProgress = false
+}
+// テストに対してはspotbugsを実行しない
+spotbugsTest.enabled = false
+
+// PMD
+pmd {
+	ignoreFailures = ignoreCheckFailures
+	ruleSets = [ "${confDir}/pmd/pmd-excludes.xml" ]
+	rulePriority = 2
+}
+
+// OWASP
+dependencyCheck {
+	failOnError = false
+	format = 'ALL'
+	scanConfigurations = [ 'compileClasspath', 'runtimeOnly' ]
+	suppressionFile = "${confDir}/owasp/suppressions.xml"
+}
+
+// JavaDoc用設定
+javadoc {
+	options.locale = defaultLocale
+	options.encoding = defaultEncoding
+
+	// JDK8でコンパイルされた場合にdoclintを停止する設定
+	if (JavaVersion.current().isJava8Compatible()) {
+		options.addStringOption('Xdoclint:all,-html', '-quiet')
+	}
+	if (JavaVersion.current().isJava9Compatible()) {
+		options.addBooleanOption('html5', true)
+	}
+}
+
+webAppDirName = 'view'
+
+// Warの設定
+war {
+	webXml = file('view/WEB-INF/web.xml')
+	archiveFileName = "rms_online.war"
 }
