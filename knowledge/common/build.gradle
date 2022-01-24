@@ -4,6 +4,7 @@ apply plugin: 'java-library'
 apply plugin: 'eclipse'
 apply plugin: 'eclipse-wtp'
 apply plugin: 'idea'
+apply plugin: 'maven'
 apply plugin: 'maven-publish'
 apply plugin: 'checkstyle'
 apply plugin: 'com.github.spotbugs'
@@ -20,26 +21,22 @@ sourceSets {
 			srcDir 'src/resources'
 		}
 	}
-	hot {
-		java {
-			srcDir 'src/java'
-		}
-	}
 }
 
-// eclipse プロジェクトの設定
 import org.gradle.plugins.ide.eclipse.model.SourceFolder
+
+// eclipse プロジェクトの設定
 eclipse {
 	// .project の設定
 	project {
 		buildCommands.clear();
-		buildCommand 'org.eclipse.jdt.core.javabuilder'
 		buildCommand 'org.eclipse.wst.common.project.facet.core.builder'
+		buildCommand 'org.eclipse.jdt.core.javabuilder'
+		buildCommand 'org.hibernate.eclipse.console.hibernateBuilder'
 		buildCommand 'org.jboss.tools.jst.web.kb.kbbuilder'
-		buildCommand 'org.eclipse.buildship.core.gradleprojectbuilder'
 		buildCommand 'org.jboss.tools.cdi.core.cdibuilder'
 		buildCommand 'org.eclipse.wst.validation.validationbuilder'
-		buildCommand 'org.hibernate.eclipse.console.hibernateBuilder'
+		buildCommand 'org.eclipse.buildship.core.gradleprojectbuilder'
 	}
 	// .classpath の設定
 	classpath {
@@ -59,7 +56,6 @@ eclipse {
 			whenMerged { classpath ->
 				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/main/java")      }*.output = "target/classes"
 				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/main/resources") }*.output = "target/classes"
-				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/hot/java")       }*.output = "target/classes"
 				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/test/java")      }*.output = "target/test-classes"
 				classpath.entries.findAll { it instanceof SourceFolder && it.path.startsWith("src/test/resources") }*.output = "target/test-classes"
 				classpath.entries.removeAll { it.kind == "output" }                
@@ -83,49 +79,17 @@ eclipse {
 					// XMLの子要素を全て削除
 					xml.asNode().children().removeAll( xml.asNode().children().findAll { true } )
 					
-					// rms_commonのJARを作成
-					def common = project(':rms_common')
-					def commonJar = common.tasks['jar']
-					
-					def module = xml.asNode().appendNode('wb-module', ['deploy-name': 'rms_online'])
-					module.appendNode('wb-resource', ['deploy-path': '/', 'source-path': '/src/main/webapp', 'tag': 'defaultRootSource'])
-					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': '/src/main/java'])
-					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': '/src/main/resources'])
-					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': '/src/test/java'])
-					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': '/src/test/resources'])
-					module.appendNode('wb-resource', ['deploy-path': '/WEB-INF/classes', 'source-path': '/src/hot/java'])
-					
-					//def depMod = module.appendNode('dependent-module', ['archiveName': 'rms_gi-entity.jar', 'deploy-path': '/WEB-INF/lib', 'handle': 'module:/classpath/lib/rms/rms_jars/common/rms_gi-entity.jar'])
-					//depMod.appendNode('dependency-type', 'uses')
-					//depMod = module.appendNode('dependent-module', ['archiveName': commonJar.archiveName, 'deploy-path': '/WEB-INF/lib', 'handle': 'module:/resource/rms_common/rms_common'])
-					def depMod = module.appendNode('dependent-module', ['archiveName': 'rms_common.jar', 'deploy-path': '/WEB-INF/lib', 'handle': 'module:/resource/rms_common/rms_common'])
-					depMod.appendNode('dependency-type', 'uses')
-					
-					module.appendNode('property', ['name': 'java-output-path', 'value': '/rms_online/target/classes'])
-					module.appendNode('property', ['name': 'context-root', 'value': 'rms_online'])
+					def module = xml.asNode().appendNode('wb-module', ['deploy-name': 'rms_common'])
+					module.appendNode('wb-resource', ['deploy-path': '/', 'source-path': '/src/main/java'])
+					module.appendNode('wb-resource', ['deploy-path': '/', 'source-path': '/src/main/resources'])
+					module.appendNode('wb-resource', ['deploy-path': '/', 'source-path': '/src/test/java'])
+					module.appendNode('wb-resource', ['deploy-path': '/', 'source-path': '/src/test/resources'])
 				}
 			}
-		}
-		
+		}		
 		// プロジェクトのプロパティ->[プロジェクト・ファセット]を設定する
 		// .settings/org.eclipse.wst.common.project.facet.core.xml
 		facet {
-			/*
-			// fixed facet jsdt
-			facet type: org.gradle.plugins.ide.eclipse.model.Facet.FacetType.fixed, name: 'wst.jsdt.web'
-			// CDI
-			facet name: 'jst.cdi', version: '2.0'
-			// java
-			facet name: 'jst.java', version: '1.8'
-			// JavaScript
-			facet name: 'wst.jsdt.web', version: '1.0'
-			// JSF
-			facet name: 'jst.jsf', version: '2.3'
-			// JPA
-			facet name: 'jpt.jpa', version: '2.2'
-			// 動的モジュール
-			facet name: 'jst.web', version: '4.0'
-			*/
 			file {
 				withXml { provider ->
 					// XMLの子要素を全て削除
@@ -134,26 +98,19 @@ eclipse {
 					NodeBuilder builder = new NodeBuilder()
 					// ランタイム設定
 					provider.asNode().children().add(0, new NodeBuilder().runtime(name: "JBoss EAP 7.3 Runtime"))
-					// fixed facet jsdt
-					provider.asNode().children().add(1, new NodeBuilder().fixed(facet: "wst.jsdt.web"))
+					// fixed facet Java
+					provider.asNode().children().add(1, new NodeBuilder().fixed(facet: "java"))
+					// fixed facet jst.utility
+					provider.asNode().children().add(2, new NodeBuilder().fixed(facet: "jst.utility"))
 					// java
-					provider.asNode().children().add(2, new NodeBuilder().installed(facet: "java", version: "1.8"))
-					// 動的モジュール
-					provider.asNode().children().add(3, new NodeBuilder().installed(facet: "jst.web", version: "4.0"))
-					// JavaScript
-					provider.asNode().children().add(4, new NodeBuilder().installed(facet: "wst.jsdt.web", version: "1.0"))
-					// CDI
-					provider.asNode().children().add(5, new NodeBuilder().installed(facet: "jst.cdi", version: "2.0"))
-					// JSF
-					provider.asNode().children().add(6, new NodeBuilder().installed(facet: "jst.jsf", version: "2.3"))
-					// JPA
-					provider.asNode().children().add(7, new NodeBuilder().installed(facet: "jpt.jpa", version: "2.2"))
+					provider.asNode().children().add(3, new NodeBuilder().installed(facet: "java", version: "1.8"))
+					// jst.utility
+					provider.asNode().children().add(4, new NodeBuilder().installed(facet: "jst.utility", version: "1.0"))
 				}
 			}
 		}
 	}
 }
-
 
 buildscript {
 	repositories {
@@ -186,18 +143,15 @@ ext {
 
 }
 
-
-repositories {
-	mavenCentral()
-	mavenLocal()
-	//maven {	url 'http://repository.scskinfo.jp/nexus/repository/maven-central/' }
-	//maven {	url 'http://repository.scskinfo.jp/nexus/repository/maven-public/' }
+jar {
+	baseName = 'rms_common'
+	version = '1.0'
 }
 
-subprojects {
-    repositories {
-        mavenCentral()
-    }
+repositories {
+	mavenCentral();
+	//maven {	url 'http://repository.scskinfo.jp/nexus/repository/maven-central/' }
+	//maven {	url 'http://repository.scskinfo.jp/nexus/repository/maven-public/' }
 }
 
 //依存関係
@@ -210,7 +164,151 @@ configurations {
 }
 
 dependencies {
+
+	// FF-CORE本体
+	//implementation group: 'jp.scsk.ffcore', name: 'fc-misc', version:  "$fcVersion"
+	//implementation group: 'jp.scsk.ffcore', name: 'fc-core', version: "$fcVersion"
+	//implementation group: 'jp.scsk.ffcore', name: 'fc-terasoluna', version:  "$fcVersion"
+	//implementation group: 'jp.scsk.ffcore', name: 'fc-thymeleaf', version:  "$fcVersion"
+	//implementation group: 'jp.scsk.ffcore', name: 'fc-web', version:  "$fcVersion"
 	
+	implementation files(
+        'lib/fc-core-3.1.1.jar',
+        'lib/fc-misc-3.1.1.jar',
+        'lib/fc-terasoluna-3.1.1.jar',
+        'lib/fc-thymeleaf-3.1.1.jar',
+        'lib/fc-web-3.1.1.jar',
+        'lib/rms_gi-entity.jar',
+        'lib/ojdbc6.jar'
+	)
+	
+	// Websphereを使用する場合はコメント解除
+	//implementation group: 'jp.scsk.ffcore', name: 'fc-websphere', version:  "$fcVersion"
+	// テスト関連モジュールを使用する場合はコメント解除
+	//testImplementation group: 'jp.scsk.ffcore', name: 'fc-test', version:  "$fcVersion"
+
+	// FF-COREの依存サードパーティOSS
+	// fc-core依存
+	// https://mvnrepository.com/artifact/ch.qos.logback/logback-core
+	implementation 'ch.qos.logback:logback-core:1.2.3'
+
+	// https://mvnrepository.com/artifact/ch.qos.logback/logback-classic
+	implementation group: 'ch.qos.logback', name: 'logback-classic', version: '1.2.3'
+
+	// https://mvnrepository.com/artifact/org.slf4j/slf4j-api
+	implementation group: 'org.slf4j', name: 'slf4j-api', version: '1.7.30'
+
+	// https://mvnrepository.com/artifact/org.slf4j/slf4j-api
+	implementation group: 'org.slf4j', name: 'jcl-over-slf4j', version: '1.7.30'
+
+	// https://mvnrepository.com/artifact/org.slf4j/slf4j-api
+	implementation group: 'org.slf4j', name: 'log4j-over-slf4j', version: '1.7.30'
+
+	// https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
+	implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.11'
+
+	// https://mvnrepository.com/artifact/org.apache.commons/commons-collections4
+	implementation group: 'org.apache.commons', name: 'commons-collections4', version: '4.4'
+
+	// https://mvnrepository.com/artifact/org.springframework/spring-context
+	implementation group: 'org.springframework', name: 'spring-context-support', version: "$springVersion"
+
+	// https://mvnrepository.com/artifact/org.springframework/spring-expression
+	implementation group: 'org.springframework', name: 'spring-expression', version: "$springVersion"
+
+	// https://mvnrepository.com/artifact/org.springframework/spring-aop
+	implementation group: 'org.springframework', name: 'spring-aop', version: "$springVersion"
+
+	// https://mvnrepository.com/artifact/org.springframework/spring-aspects
+	implementation group: 'org.springframework', name: 'spring-aspects', version: "$springVersion"
+
+	// https://mvnrepository.com/artifact/org.springframework/spring-orm
+	implementation group: 'org.springframework', name: 'spring-orm', version: "$springVersion"
+
+	// https://mvnrepository.com/artifact/org.springframework.data/spring-data-commons
+	implementation group: 'org.springframework.data', name: 'spring-data-commons', version: '2.4.5'
+
+	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-core
+	implementation group: 'org.springframework.security', name: 'spring-security-core', version: "${springSecurityVersion}"
+	
+	testImplementation group: 'org.junit.jupiter', name: 'junit-jupiter', version: '5.6.3'
+
+	// fc-misc依存
+	// https://mvnrepository.com/artifact/commons-beanutils/commons-beanutils
+	implementation group: 'commons-beanutils', name: 'commons-beanutils', version: '1.9.4'
+
+	// fc-test依存
+	// https://mvnrepository.com/artifact/org.springframework/spring-test
+	testImplementation group: 'org.springframework', name: 'spring-test', version: "$springVersion"
+
+	// spring test dbunit
+	testImplementation group: 'com.github.springtestdbunit', name: 'spring-test-dbunit', version: '1.3.0'
+
+	// https://search.maven.org/artifact/org.junit.jupiter/junit-jupiter
+	testImplementation group: 'org.junit.jupiter', name: 'junit-jupiter', version: '5.6.3'
+
+	// https://search.maven.org/artifact/org.hamcrest/hamcrest
+	testImplementation group: 'org.hamcrest', name: 'hamcrest', version: '2.2'
+
+	// fc-thymeleaf依存
+	// https://mvnrepository.com/artifact/org.thymeleaf/thymeleaf
+	implementation group: 'org.thymeleaf', name: 'thymeleaf', version: '3.0.12.RELEASE'
+
+	// https://mvnrepository.com/artifact/org.thymeleaf/thymeleaf-spring5
+	implementation group: 'org.thymeleaf', name: 'thymeleaf-spring5', version: '3.0.12.RELEASE'
+
+	// https://mvnrepository.com/artifact/org.thymeleaf.extras/thymeleaf-extras-springsecurity5
+	implementation group: 'org.thymeleaf.extras', name: 'thymeleaf-extras-springsecurity5', version: '3.0.4.RELEASE'
+
+	// fc-web依存
+	// https://mvnrepository.com/artifact/org.springframework/spring-web
+	implementation group: 'org.springframework', name: 'spring-webmvc', version: "$springVersion"
+
+	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-web
+	implementation group: 'org.springframework.security', name: 'spring-security-web', version: "$springSecurityVersion"
+
+	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-web
+	implementation group: 'org.springframework.security', name: 'spring-security-acl', version: "$springSecurityVersion"
+
+	// https://mvnrepository.com/artifact/org.springframework.security/spring-security-web
+	implementation group: 'org.springframework.security', name: 'spring-security-config', version: "$springSecurityVersion"
+
+	// https://mvnrepository.com/artifact/org.hibernate/hibernate-validator
+	implementation group: 'org.hibernate', name: 'hibernate-validator', version: '6.2.0.Final'
+
+	// スタータ機能用デフォルトOSS
+	// Servlet
+	// https://mvnrepository.com/artifact/javax.servlet/javax.servlet-api
+	compileOnly group: 'javax.servlet', name: 'javax.servlet-api', version: '4.0.1'
+
+	// fileUpload
+	// https://mvnrepository.com/artifact/commons-fileupload/commons-fileupload
+	runtimeOnly group: 'commons-fileupload', name: 'commons-fileupload', version: '1.4'
+
+	// Mybatisを使用するための設定
+	// https://mvnrepository.com/artifact/org.mybatis/mybatis
+	implementation group: 'org.mybatis', name: 'mybatis', version: '3.5.6'
+
+	// https://mvnrepository.com/artifact/org.mybatis/mybatis-spring
+	implementation group: 'org.mybatis', name: 'mybatis-spring', version: '2.0.6'
+
+	// HikariCPを使用するための設定
+	// https://mvnrepository.com/artifact/com.zaxxer/HikariCP
+	implementation group: 'com.zaxxer', name: 'HikariCP', version: '3.4.5'
+
+	// H2DBのJDBCドライバ
+	// https://mvnrepository.com/artifact/com.h2database/h2
+	implementation 'com.h2database:h2:1.4.200'
+
+	// lomboc
+	// https://mvnrepository.com/artifact/org.projectlombok/lombok
+	providedCompile group: 'org.projectlombok', name: 'lombok', version: '1.18.20'
+
+	// Archunit
+	// https://mvnrepository.com/artifact/com.tngtech.archunit/archunit
+	testImplementation 'com.tngtech.archunit:archunit-junit5-api:0.17.0'
+	testRuntimeOnly 'com.tngtech.archunit:archunit-junit5-engine:0.17.0'
+
 	// ↓RMS依存関係 --------------------------------------------------------------------------------
 	// https://mvnrepository.com/artifact/javax/javaee-web-api
 	//implementation group: 'javax', name: 'javaee-web-api', version: '8.0.1'
@@ -226,6 +324,9 @@ dependencies {
 	// https://mvnrepository.com/artifact/javax.enterprise/cdi-api
 	implementation group: 'javax.enterprise', name: 'cdi-api', version: '2.0'
 	
+	// https://mvnrepository.com/artifact/org.springframework.data/spring-data-jpa
+	implementation group: 'org.springframework.data', name: 'spring-data-jpa', version: '2.4.5'
+
 	// https://mvnrepository.com/artifact/org.hibernate/hibernate-core
 	implementation group: 'org.hibernate', name: 'hibernate-core', version: '5.4.21.Final'
 	// https://mvnrepository.com/artifact/org.hibernate/hibernate-entitymanager
@@ -236,23 +337,14 @@ dependencies {
 	// https://mvnrepository.com/artifact/org.seasar.doma/doma
 	implementation group: 'org.seasar.doma', name: 'doma', version: '1.38.2'
 	
-	// https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
-	implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.11'
 	// https://mvnrepository.com/artifact/commons-beanutils/commons-beanutils
 	implementation group: 'commons-beanutils', name: 'commons-beanutils', version: '1.9.4'
-	
-	// https://mvnrepository.com/artifact/org.primefaces/primefaces
-	implementation group: 'org.primefaces', name: 'primefaces', version: '8.0'
 	
 	// https://mvnrepository.com/artifact/org.reactivestreams/reactive-streams
 	implementation group: 'org.reactivestreams', name: 'reactive-streams', version: '1.0.3'
 	
-	implementation project(':rms_common')
-	
 	// ↑ここまで追加 --------------------------------------------------------------------------------
-	
 }
-
 
 // FF-COREデフォルトの静的解析
 // 品質チェックエラー発生時もビルドを継続する
@@ -304,12 +396,4 @@ javadoc {
 	if (JavaVersion.current().isJava9Compatible()) {
 		options.addBooleanOption('html5', true)
 	}
-}
-
-webAppDirName = 'view'
-
-// Warの設定
-war {
-	webXml = file('view/WEB-INF/web.xml')
-	archiveFileName = "rms_online.war"
 }
